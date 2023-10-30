@@ -1,0 +1,30 @@
+RGB = imread('cheetah.bmp');
+I = im2gray(RGB);
+I = padarray(I, [4 4], 0, 'both');
+pattern = readmatrix('Zig-Zag Pattern.txt');
+vector = zeros(255*270, 1);
+
+for row = 1 : 255
+    for col = 1 : 270
+        block = zeros(8, 8);
+        for r = row : row + 7
+            for c = col : col + 7
+                block(r - row + 1, c - col + 1) = I(r, c);
+            end
+        end
+
+        dct2Block = dct2(block);
+        flatBlock = zeros(1, 64);
+
+        for r = 1 : 8
+            for c = 1 : 8
+                flatBlock(1, pattern(r, c) + 1) = dct2Block(r, c);
+            end
+        end
+
+        [secondLargeNum, secondLargeIdx] = maxk(flatBlock, 2);
+        secondLargeIdx = secondLargeIdx(2);
+        vector[(row - 1)*]
+    end
+end
+imshow(I,[]);

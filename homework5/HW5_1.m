@@ -26,6 +26,31 @@ maxIter = 200;
 dim = [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64];
 errorList = zeros(5, 5, length(dim));
 
+% Pre-compute DCT features for all image blocks
+rows = 255;
+cols = 270;
+im_blocks = zeros(rows * cols, 64);
+idx = 1;
+for r0 = 1 : rows
+    for c0 = 1 : cols
+        block = zeros(8, 8);
+        for r = r0 : r0 + 7
+            for c = c0 : c0 + 7
+                block(r - r0 + 1, c - c0 + 1) = I(r, c);
+            end
+        end
+        dct2Block = dct2(block);
+        flatBlock = zeros(1, 64);
+        for r = 1 : 8
+            for c = 1 : 8
+                flatBlock(1, pattern(r, c) + 1) = dct2Block(r, c);
+            end
+        end
+        im_blocks(idx, :) = flatBlock;
+        idx = idx + 1;
+    end
+end
+
 for idxFG = 1 : 5
     piFG = ones(1, C) / C;
     muFG = rand(C, 64);
@@ -44,7 +69,7 @@ for idxFG = 1 : 5
         H = zeros(C, fgSize);
 
         for i = 1 : C
-            H(i, :) = mvnpdf(TrainsampleDCT_FG, muFG(i, :), squeeze(covFG(i, :, :))) * pi(1, i);
+            H(i, :) = mvnpdf(TrainsampleDCT_FG, muFG(i, :), squeeze(covFG(i, :, :))) * piFG(1, i);
         end
 
         H = transpose(H);
@@ -73,7 +98,7 @@ for idxFG = 1 : 5
                 end
             end
 
-            muNew(i, :, :) = sum(HTmp, 1) / HSum(1, i);
+            muNew(i, :, :) = sum(HTmp, 1) / Hsum1(1, i);
         end
 
         % update cov.
@@ -86,7 +111,7 @@ for idxFG = 1 : 5
                 end
             end
 
-            covTmp = sum(xTmp, 1) / HSum(1, i);
+            covTmp = sum(xTmp, 1) / Hsum1(1, i);
 
             for j = 1 : 64
                 if covTmp(1, j) < 0.000001
@@ -103,7 +128,7 @@ for idxFG = 1 : 5
 
     for idxBG = 1 : 5
         disp("idxBG " + idxBG);
-        pibG = ones(1, C) / C;
+        piBG = ones(1, C) / C;
         muBG = rand(C, 64);
         covBG = zeros(C, 64, 64);
         for m = 1 : maxIter
@@ -112,7 +137,7 @@ for idxFG = 1 : 5
             H = zeros(C, bgSize);
     
             for i = 1 : C
-                H(i, :) = mvnpdf(TrainsampleDCT_BG, muBG(i, :), squeeze(cov(i, :, :))) * piBG(1, i);
+            H(i, :) = mvnpdf(TrainsampleDCT_BG, muBG(i, :), squeeze(covBG(i, :, :))) * piBG(1, i);
             end
     
             H = transpose(H);
@@ -141,7 +166,7 @@ for idxFG = 1 : 5
                     end
                 end
     
-                muNew(i, :, :) = sum(HTmp, 1) / HSum(1, i);
+                muNew(i, :, :) = sum(HTmp, 1) / Hsum1(1, i);
             end
     
             % update cov.
@@ -154,7 +179,7 @@ for idxFG = 1 : 5
                     end
                 end
     
-                covTmp = sum(xTmp, 1) / HSum(1, i);
+                covTmp = sum(xTmp, 1) / Hsum1(1, i);
     
                 for j = 1 : 64
                     if covTmp(1, j) < 0.000001
@@ -166,55 +191,37 @@ for idxFG = 1 : 5
             end
             
             muBG = muNew;
-            covBg = covNew;
+            covBG = covNew;
         end
 
         for d = 1 : length(dim)
             currD = dim(1, d);
             disp("currD " + currD);
 
-            muFGCur = muFG(:,1 :cur_dim);
-            covFGCur = covFG(:, 1 : cur_dim, 1 : cur_dim);
-            muBGCur = muBG(:, 1 : cur_dim);
-            covBGCur = covBG(:, 1 : cur_dim, 1 : cur_dim);
 
-            for row = 1 : 255
-                for col = 1 : 270
-                    block = zeros(8, 8);
-                    % Get the blcok.
-                    for r = row : row + 7
-                        for c = col : col + 7
-                            block(r - row + 1, c - col + 1) = I(r, c);
-                        end
-                    end
-            
-                    % Compute DCT.
-                    dct2Block = dct2(block);
-                    flatBlock = zeros(1, 64);
-        
-                    for r = 1 : 8
-                        for c = 1 : 8
-                            flatBlock(1, pattern(r, c) + 1) = dct2Block(r, c);
-                        end
-                    end
-                end
-            end
+            muFGCur = muFG(:, 1 : currD);
+            covFGCur = covFG(:, 1 : currD, 1 : currD);
+            muBGCur = muBG(:, 1 : currD);
+            covBGCur = covBG(:, 1 : currD, 1 : currD);
 
-            probFG = zeros(255, 270);
-            probBG = zeros(255, 270);
+            % Use pre-computed DCT features stored in im_blocks
+            blocksCur = im_blocks(:, 1 : currD);
+
+            probFG = zeros(rows * cols, 1);
+            probBG = zeros(rows * cols, 1);
 
             for k = 1 : C
-                probFG = probFG + mvnpdf(im_blocks, muFG(k, :), squeeze(covFG(i, :, :))) * piFG(1, i);
+                probFG = probFG + mvnpdf(blocksCur, muFGCur(k, :), squeeze(covFGCur(k, :, :))) * piFG(1, k);
             end
 
             for k = 1 : C
-                probBG = probBG + mvnpdf(im_blocks, muBG(k, :), squeeze(covBG(i, :, :))) * piBG(1, i);
+                probBG = probBG + mvnpdf(blocksCur, muBGCur(k, :), squeeze(covBGCur(k, :, :))) * piBG(1, k);
             end
 
-            A = FG_prob - BG_prob;
+            A = reshape(probFG - probBG, rows, cols);
 
-            for row = 1 : 255
-                for col = 1 : 270
+            for row = 1 : rows
+                for col = 1 : cols
                     if A(row, col) >= 0
                         A(row, col) = 1;
                     else
@@ -227,14 +234,14 @@ for idxFG = 1 : 5
                 end
             end
 
-            errorList(idxFG, idxBG, currD) = errorList(idxFG, idxBG, currD) / (255 * 270);
+            errorList(idxFG, idxBG, currD) = errorList(idxFG, idxBG, currD) / (rows * cols);
         end
     end
 end
 
 % Plot the gram.
 for idxFG = 1 : 5
-    subplot(1, 5, idxF);
+    subplot(1, 5, idxFG);
     plot(dim, errorList(idxFG, 1, :), dim, errorList(idxFG, 2, :), dim, errorList(idxFG, 3, :), dim, errorList(idxFG, 4, :), dim, errorList(idxFG, 5, :), '.-'), legend('BG1', 'BG2', 'BG3', 'BG4', 'BG5');
     title(['error ', idxFG]);
     xlabel('dim');
